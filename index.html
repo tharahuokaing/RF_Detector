@@ -1,0 +1,129 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HUOKAING THARA | Live Spectrum Analyzer</title>
+    <style>
+        :root { --neon: #00ff41; --bg: #050505; }
+        body { background: var(--bg); color: #fff; font-family: 'Courier New', monospace; margin: 0; overflow: hidden; }
+        
+        .header { padding: 15px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+        .user-id { color: var(--neon); font-size: 0.8rem; }
+        
+        canvas { width: 100%; height: 300px; display: block; background: #000; border-bottom: 2px solid var(--neon); }
+        
+        .controls { padding: 20px; text-align: center; }
+        .data-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+        .data-card { background: #111; padding: 15px; border-radius: 5px; border: 1px solid #222; }
+        
+        .btn-run { 
+            background: var(--neon); color: #000; border: none; padding: 15px 50px; 
+            font-weight: bold; cursor: pointer; font-size: 1rem; border-radius: 30px;
+            box-shadow: 0 0 15px rgba(0, 255, 65, 0.4);
+        }
+        
+        .highlight { color: var(--neon); font-size: 1.5rem; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <span>SPECTRAL ANALYZER v1.0</span>
+        <span class="user-id">ID: u0_a190</span>
+    </div>
+
+    <canvas id="visualizer"></canvas>
+
+    <div class="controls">
+        <div class="data-panel">
+            <div class="data-card">
+                <div>Dominant Freq</div>
+                <div class="highlight"><span id="freq">0</span> Hz</div>
+            </div>
+            <div class="data-card">
+                <div>Signal Strength</div>
+                <div class="highlight"><span id="db">0</span>%</div>
+            </div>
+        </div>
+
+        <button class="btn-run" id="startBtn">INITIALIZE SENSORS</button>
+        <p id="status" style="color: #666; margin-top: 15px;">Press Run to start FFT Analysis</p>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('visualizer');
+        const ctx = canvas.getContext('2d');
+        const startBtn = document.getElementById('startBtn');
+        
+        let audioCtx, analyser, dataArray, bufferLength;
+
+        startBtn.onclick = async () => {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const source = audioCtx.createMediaStreamSource(stream);
+            
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 256; // Smaller for cleaner bars, 2048 for high detail
+            source.connect(analyser);
+
+            bufferLength = analyser.frequencyBinCount;
+            dataArray = new Uint8Array(bufferLength);
+            
+            startBtn.style.display = 'none';
+            document.getElementById('status').innerText = "REAL-TIME MONITOR ACTIVE";
+            draw();
+        };
+
+        function draw() {
+            requestAnimationFrame(draw);
+            analyser.getByteFrequencyData(dataArray);
+
+            // Clear Canvas
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            let barWidth = (canvas.width / bufferLength) * 2.5;
+            let barHeight;
+            let x = 0;
+            let maxVal = 0;
+            let maxIndex = 0;
+
+            for(let i = 0; i < bufferLength; i++) {
+                barHeight = dataArray[i];
+                
+                if(barHeight > maxVal) { 
+                    maxVal = barHeight; 
+                    maxIndex = i; 
+                }
+
+                // Color gradient for the bars
+                ctx.fillStyle = `rgb(0, ${barHeight + 100}, 65)`;
+                ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+
+                x += barWidth + 1;
+            }
+
+            // Calculations
+            const freq = Math.round(maxIndex * audioCtx.sampleRate / analyser.fftSize);
+            document.getElementById('freq').innerText = freq;
+            document.getElementById('db').innerText = Math.round((maxVal / 255) * 100);
+
+            // LOGGING TRIGGER: Detect High Frequency (Cricket Range)
+            if (freq > 4000 && maxVal > 180) {
+                triggerLog(freq);
+            }
+        }
+
+        function triggerLog(f) {
+            // Send to target: 192.168.43.1:8022
+            fetch('http://192.168.43.1:8022/IP-My-Website-View/logs.txt', {
+                method: 'POST',
+                mode: 'no-cors',
+                body: `[CRICKET_DETECTION] Freq: ${f}Hz | User: u0_a190 | Time: ${new Date().toLocaleTimeString()}\n`
+            });
+        }
+    </script>
+</body>
+</html>
